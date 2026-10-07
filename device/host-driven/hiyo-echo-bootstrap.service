@@ -1,0 +1,13 @@
+[Unit]
+Description=Hiyo Echo device bootstrap (host-driven)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=%h/rs03qr/v2/echo-dots-2-hermes/scripts/deploy-device.sh --host 192.168.0.142 --server 192.168.0.212 --via ssh
+ExecStop=/usr/bin/ssh -o BatchMode=yes root@192.168.0.142 'killall echo_probe echo_control echo_led_watchdog; start mixer'
+
+[Install]
+WantedBy=default.target

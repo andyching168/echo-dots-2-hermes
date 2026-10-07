@@ -1,0 +1,17 @@
+[Unit]
+Description=Hermes Echo Gadget compatibility facade
+After=network-online.target hermes-gateway.service hermes-echo-gadget.service
+Wants=network-online.target hermes-gateway.service hermes-echo-gadget.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ac/voice/echo-bridge
+Environment=PYTHONPATH=/home/ac/.hermes/hermes-agent
+Environment=HERMES_HOME=/home/ac/.hermes
+ExecStart=/home/ac/.hermes/hermes-agent/venv/bin/python /home/ac/voice/echo-bridge/echo_turn_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

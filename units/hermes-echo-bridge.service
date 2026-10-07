@@ -1,0 +1,20 @@
+[Unit]
+Description=Hermes Echo Dot 2 bridge (control + one-shot)
+After=network-online.target hermes-echo-tts.service hermes-echo-gadget.service
+Wants=network-online.target hermes-echo-tts.service hermes-echo-gadget.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ac/voice/echo-bridge
+Environment=ECHO_TURN_URL=http://127.0.0.1:8796/turn
+# Public/default profile: normal Hermes Question Mode, using Hermes' configured
+# tts.provider directly, with no Seed-VC and no GPT Live dependency.
+ExecStart=/home/ac/voice/echo-bridge/.venv/bin/python /home/ac/voice/echo-bridge/echo_server.py --host 192.168.0.212 --control --oneshot --oneshot-tts hermes --no-oneshot-vc --led-mode exclusive --wakeword-wake --outdir /home/ac/voice/echo-bridge/captures
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

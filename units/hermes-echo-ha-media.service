@@ -1,0 +1,14 @@
+[Unit]
+Description=Hiyo Echo -> Home Assistant media_player (MQTT)
+After=hermes-echo-bridge.service
+Wants=hermes-echo-bridge.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ac/voice/echo-bridge
+ExecStart=/home/ac/voice/echo-bridge/.venv/bin/python /home/ac/voice/echo-bridge/echo_ha_media.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

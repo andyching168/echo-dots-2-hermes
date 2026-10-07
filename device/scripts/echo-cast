@@ -1,0 +1,155 @@
+#!/system/bin/sh
+#
+# echo-cast — run the Google Cast receiver daemon on an Amazon Echo Dot 2
+# (RS03QR / biscuit_puffin) and advertise it as "Echo Dot Cast".
+#
+# Everything lives in /data/local/tmp and is fully reversible. Nothing under
+# /system is modified. While the receiver runs:
+#   * Amazon's `mixer` service is stopped so we get exclusive access to the
+#     AIC3204 codec PCM (hw:0,23) — without this, playback is just noise;
+#   * the speaker amp is switched off when idle (otherwise the speaker hums);
+#   * two iptables INPUT rules are added so Cast senders on the LAN can reach
+#     TCP 8008/8009 (Amazon's firewall drops them by default).
+# All three are undone by `echo-cast stop` (or a reboot), restoring Alexa.
+#
+# Usage: echo-cast {start|stop|restart|status|log}
+#
+set -u
+
+BIN="${ECHO_CAST_BIN:-/data/local/tmp/openchromecast}"
+NAME="${ECHO_CAST_NAME:-Echo Dot Cast}"
+MODEL="${ECHO_CAST_MODEL:-Echo Dot 2}"
+CARD="${ECHO_CAST_CARD:-0}"
+# hw:0,23 = TLV320AIC3204 Playback (the real codec path to the speaker).
+# hw:0,0 (MultiMedia1) is NOT a clean speaker path on this device.
+DEVICE="${ECHO_CAST_DEVICE:-23}"
+PORT="${ECHO_CAST_PORT:-8009}"
+SETUP_PORT="${ECHO_CAST_SETUP_PORT:-8008}"
+TMP=/data/local/tmp
+LOG="$TMP/echo-cast.log"
+PIDFILE="$TMP/echo-cast.pid"
+
+# Amazon's `mixer` service holds hw:0,23 open. We must stop it to get exclusive
+# access to the clean codec playback path. Reversible (`start mixer` / reboot).
+STOP_MIXER="${ECHO_CAST_STOP_MIXER:-1}"
+
+# Absolute paths: our own helper functions must never shadow Android's
+# /system/bin/start and /system/bin/stop (which control init services).
+INIT_START=/system/bin/start
+INIT_STOP=/system/bin/stop
+TINYMIX=/system/bin/tinymix
+IPTABLES=/system/bin/iptables
+
+svc_running() {
+    [ -f "$PIDFILE" ] || return 1
+    pid=$(cat "$PIDFILE" 2>/dev/null || echo "")
+    [ -n "$pid" ] || return 1
+    [ -d "/proc/$pid" ] || return 1
+    return 0
+}
+
+amp() {
+    [ -x "$TINYMIX" ] || return 0
+    "$TINYMIX" "Ext_Speaker_Amp_Switch" "$1" >/dev/null 2>&1 || true
+}
+
+open_ports() {
+    [ -x "$IPTABLES" ] || return 0
+    for p in "$PORT" "$SETUP_PORT"; do
+        "$IPTABLES" -C INPUT -i wlan0 -p tcp --dport "$p" -j ACCEPT 2>/dev/null \
+            || "$IPTABLES" -I INPUT 1 -i wlan0 -p tcp --dport "$p" -j ACCEPT 2>/dev/null \
+            || true
+    done
+}
+
+close_ports() {
+    [ -x "$IPTABLES" ] || return 0
+    for p in "$PORT" "$SETUP_PORT"; do
+        "$IPTABLES" -D INPUT -i wlan0 -p tcp --dport "$p" -j ACCEPT 2>/dev/null || true
+    done
+}
+
+do_start() {
+    if svc_running; then
+        echo "echo-cast: already running (pid $(cat "$PIDFILE"))"
+        return 0
+    fi
+    if [ ! -x "$BIN" ]; then
+        echo "echo-cast: $BIN not found or not executable" >&2
+        return 1
+    fi
+
+    if [ "$STOP_MIXER" = "1" ]; then
+        echo "echo-cast: stopping Amazon mixer service (restored on stop)"
+        "$INIT_STOP" mixer 2>/dev/null || true
+        sleep 1
+    fi
+    echo "echo-cast: opening LAN ports $SETUP_PORT/$PORT for Cast"
+    open_ports
+    amp Off
+
+    export TMPDIR="$TMP"
+    : > "$LOG"
+    "$BIN" \
+        --friendly-name "$NAME" \
+        --model "$MODEL" \
+        --port "$PORT" \
+        --setup-port "$SETUP_PORT" \
+        --player echo \
+        --alsa-card "$CARD" \
+        --alsa-device "$DEVICE" \
+        </dev/null >>"$LOG" 2>&1 &
+    echo $! > "$PIDFILE"
+    sleep 2
+
+    if svc_running; then
+        echo "echo-cast: started (pid $(cat "$PIDFILE")) — advertising '$NAME'"
+        grep -a "advertising" "$LOG" 2>/dev/null | head -1 || true
+    else
+        echo "echo-cast: failed to start; see $LOG" >&2
+        tail -5 "$LOG" 2>/dev/null || true
+        close_ports
+        [ "$STOP_MIXER" = "1" ] && "$INIT_START" mixer 2>/dev/null || true
+        return 1
+    fi
+}
+
+do_stop() {
+    if svc_running; then
+        pid=$(cat "$PIDFILE")
+        echo "echo-cast: stopping pid $pid"
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        kill -9 "$pid" 2>/dev/null || true
+    else
+        echo "echo-cast: not running"
+    fi
+    rm -f "$PIDFILE"
+    close_ports
+    # Hand the audio path back to Amazon / Alexa (amp + LED ring).
+    amp On
+    [ -x "$TMP/echo-led" ] && "$TMP/echo-led" --restore >/dev/null 2>&1 || true
+    if [ "$STOP_MIXER" = "1" ]; then
+        echo "echo-cast: restarting Amazon mixer service"
+        "$INIT_START" mixer 2>/dev/null || true
+    fi
+}
+
+do_status() {
+    if svc_running; then
+        echo "echo-cast: running (pid $(cat "$PIDFILE"))"
+        grep -a "advertising\|listening" "$LOG" 2>/dev/null | tail -2 || true
+    else
+        echo "echo-cast: stopped"
+    fi
+    echo -n "init.svc.mixer: "; getprop init.svc.mixer 2>/dev/null || true
+}
+
+case "${1:-status}" in
+    start)   do_start ;;
+    stop)    do_stop ;;
+    restart) do_stop; sleep 1; do_start ;;
+    status)  do_status ;;
+    log)     tail -n "${2:-50}" "$LOG" ;;
+    *)       echo "usage: $0 {start|stop|restart|status|log}" >&2; exit 2 ;;
+esac

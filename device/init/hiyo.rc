@@ -1,0 +1,22 @@
+# D2A additive Hiyo autostart service.
+# Delete this single file to disable (rollback). No stock service stanza is edited.
+#
+# Mechanism:
+#   init starts /system/bin/hiyo_boot (SELinux type su_exec) with seclabel u:r:su:s0.
+#   hiyo_boot exec()s /data/local/tmp/hiyo_supervisor.sh, which owns the Hiyo stack.
+#   Trigger fires on every normal boot: FireOS init sets sys.boot_completed=1 itself
+#   (init.mt8163_amazon.rc:49); /system/etc/init property triggers are proven to run
+#   (e.g. UdssCampSvc is started only by this same trigger in init.udsscamp.rc).
+#
+# The service is non-oneshot so init supervises the single supervisor process.
+# All Wi-Fi / bridge / mixer waiting happens inside the supervisor, never in init.
+
+service hiyo /system/bin/hiyo_boot
+    class late_start
+    user root
+    group root system
+    seclabel u:r:su:s0
+    disabled
+
+on property:sys.boot_completed=1
+    start hiyo

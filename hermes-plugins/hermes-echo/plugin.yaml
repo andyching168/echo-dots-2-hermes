@@ -1,0 +1,13 @@
+name: hermes-echo
+version: 1.0.0
+description: "Narrow Echo Dot (Hiyo) control surface — device state, Live Mode control, interrupt and volume, backed by the authoritative EchoController. No hardware access."
+provides_tools:
+  - echo_get_state
+  - echo_get_volume
+  - echo_enter_live_mode
+  - echo_end_live_mode
+  - echo_interrupt
+  - echo_set_volume
+  - echo_play_chime
+provides_hooks:
+  - pre_llm_call

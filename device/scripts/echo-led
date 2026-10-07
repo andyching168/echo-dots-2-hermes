@@ -1,0 +1,141 @@
+#!/system/bin/sh
+# echo-led - control the Amazon Echo Dot 2nd Gen (RS03QR / biscuit_puffin) LED ring
+#
+# Low-level target: the is31fl3236 36-channel LED driver exposed by the Amazon
+# kernel driver as a text "frame" attribute:
+#
+#     /sys/bus/i2c/devices/0-003f/frame
+#
+# The file contains 36 channels (12 RGB LEDs * 3) as 72 lower-case hex digits,
+# two digits (8-bit, 00-ff) per channel, in per-LED R,G,B order:
+#
+#     LED0.R LED0.G LED0.B  LED1.R LED1.G LED1.B ... LED11.B
+#
+# This is exactly the interface ledcontroller itself uses to push pixels to
+# hardware. Writing it directly gives us arbitrary RGB with no HAL needed.
+#
+# Reversible:  ./echo-led --restore   hands control back to Amazon's stack.
+#
+# NOTE: Amazon's auto-brightness service periodically re-renders the active
+# animation and would overwrite our frame, so we disable it (reversible) and
+# clear any active animation before drawing.
+
+FRAME=/sys/bus/i2c/devices/0-003f/frame
+LEDCTRL=/system/bin/ledctrl
+NUM=12
+
+die() { echo "echo-led: $*" >&2; exit 1; }
+
+# Print $NUM zeros, used as a blank canvas
+blank() {
+    i=0
+    while [ $i -lt $NUM ]; do printf '000000'; i=$((i + 1)); done
+}
+
+# Validate a channel value is a 0-255 integer
+chk() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$1" -ge 0 ] 2>/dev/null && [ "$1" -le 255 ] 2>/dev/null
+}
+
+hex2() { printf '%02x' "$1"; }
+
+usage() {
+    cat <<'EOF'
+echo-led - control Echo Dot 2nd Gen (RS03QR) LED ring
+
+Usage:
+  echo-led --all R G B          set the whole ring to one colour (0-255 each)
+  echo-led --led N R G B        set a single LED (N = 0..11) to a colour
+  echo-led --off                turn the ring off
+  echo-led --walk [R G B]       light LEDs 0..11 one at a time (colour optional)
+  echo-led --dump               print the current raw frame
+  echo-led --clear-anim         clear Amazon animations (blank canvas)
+  echo-led --restore            unfreeze/restore Amazon LED control
+  echo-led --help
+
+Examples:
+  echo-led --all 255 0 0
+  echo-led --all 128 0 255
+  echo-led --led 3 0 255 0     (LED index 0..11)
+  echo-led --off
+EOF
+}
+
+# Prepare a blank canvas: stop animation + auto-brightness clobbering.
+prepare() {
+    [ -x "$LEDCTRL" ] && {
+        "$LEDCTRL" -a off >/dev/null 2>&1
+        "$LEDCTRL" -c   >/dev/null 2>&1
+    }
+    # give ledcontroller a moment to stop re-drawing the frame
+    sleep 0.3
+}
+
+put() { printf '%s\n' "$1" > "$FRAME" || die "cannot write $FRAME"; }
+
+case "$1" in
+    --all)
+        [ $# -eq 4 ] || die "--all needs R G B"
+        chk "$2" && chk "$3" && chk "$4" || die "values must be 0..255"
+        prepare
+        px="$(hex2 "$2")$(hex2 "$3")$(hex2 "$4")"
+        s=""
+        i=0; while [ $i -lt $NUM ]; do s="$s$px"; i=$((i + 1)); done
+        put "$s"
+        ;;
+    --led)
+        [ $# -eq 5 ] || die "--led needs N R G B"
+        n="$2"; chk "$n" || die "LED index must be a number"
+        [ "$n" -ge 0 ] && [ "$n" -lt "$NUM" ] 2>/dev/null || die "LED index must be 0..$((NUM - 1))"
+        chk "$3" && chk "$4" && chk "$5" || die "values must be 0..255"
+        prepare
+        idx="$n"
+        px="$(hex2 "$3")$(hex2 "$4")$(hex2 "$5")"
+        s=""; i=0
+        while [ $i -lt $NUM ]; do
+            if [ $i -eq $idx ]; then s="$s$px"; else s="$s"000000; fi
+            i=$((i + 1))
+        done
+        put "$s"
+        ;;
+    --off)
+        prepare
+        put "$(blank)"
+        ;;
+    --walk)
+        r="${2:-255}"; g="${3:-0}"; b="${4:-0}"
+        chk "$r" && chk "$g" && chk "$b" || die "values must be 0..255"
+        prepare
+        px="$(hex2 "$r")$(hex2 "$g")$(hex2 "$b")"
+        for n in $(seq 1 $NUM); do
+            idx=$((n - 1)); s=""; i=0
+            while [ $i -lt $NUM ]; do
+                if [ $i -eq $idx ]; then s="$s$px"; else s="$s"000000; fi
+                i=$((i + 1))
+            done
+            put "$s"
+            sleep 0.3
+        done
+        ;;
+    --dump)
+        echo "frame: $(cat "$FRAME")"
+        ;;
+    --clear-anim)
+        "$LEDCTRL" -c
+        ;;
+    --restore)
+        "$LEDCTRL" -a on >/dev/null 2>&1
+        "$LEDCTRL" -c >/dev/null 2>&1
+        echo "echo-led: Amazon LED control restored (auto-brightness on, animations cleared)"
+        ;;
+    -h|--help|help|"")
+        usage
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

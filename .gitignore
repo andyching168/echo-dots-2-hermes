@@ -1,0 +1,37 @@
+# Python / virtualenv
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+.pytest_cache/
+
+# Runtime state and local captures
+server/gadget_state.json
+server/captures/
+server/logs/
+server/*.log
+server/test_audio/**/*.wav
+captures/
+logs/
+*.tmp
+
+# Local secrets / overrides
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+units/**/*.local.conf
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*~
+
+# Historical scratch / backups are intentionally not part of the public bundle
+backups/
+*.bak
+*.pre-*
+*.reverted-*

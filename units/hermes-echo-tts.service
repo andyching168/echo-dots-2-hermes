@@ -1,0 +1,17 @@
+[Unit]
+Description=Hermes-configured TTS bridge for Echo (:8795)
+After=network-online.target hermes-gateway.service
+Wants=network-online.target hermes-gateway.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ac/voice/echo-bridge
+Environment=PYTHONPATH=/home/ac/.hermes/hermes-agent
+Environment=HERMES_HOME=/home/ac/.hermes
+ExecStart=/home/ac/.hermes/hermes-agent/venv/bin/python /home/ac/voice/echo-bridge/echo_hermes_tts.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

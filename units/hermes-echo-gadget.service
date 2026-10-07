@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes Echo Gadget shadow adapter (:8798)
+After=network-online.target hermes-gateway.service hermes-echo-bridge.service
+Wants=network-online.target hermes-gateway.service hermes-echo-bridge.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ac/voice/echo-bridge
+Environment=ECHO_GADGET_URL=ws://127.0.0.1:8766/gadget
+ExecStart=/home/ac/voice/echo-bridge/.venv/bin/python /home/ac/voice/echo-bridge/echo_gadget_shadow.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

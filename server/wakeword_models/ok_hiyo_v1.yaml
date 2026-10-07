@@ -1,0 +1,33 @@
+model_name: ok_hiyo_v1
+target_phrase:
+- okay hee yo
+custom_negative_phrases: []
+n_samples: 20000
+n_samples_val: 2000
+tts_batch_size: 100
+augmentation_batch_size: 32
+piper_sample_generator_path: ./piper-sample-generator
+output_dir: ./v1_model
+rir_paths:
+- ./v1_rirs
+background_paths:
+- ./audioset_16k
+- ./pilot_background
+background_paths_duplication_rate:
+- 1
+- 1
+false_positive_validation_data_path: ./v1_data/audioset_fp_stream.npy
+augmentation_rounds: 1
+feature_data_files:
+  audioset: ./v1_data/audioset_negative_features.npy
+batch_n_per_class:
+  audioset: 256
+  adversarial_negative: 64
+  positive: 64
+model_type: dnn
+layer_size: 32
+steps: 10000
+max_negative_weight: 1000
+target_false_positives_per_hour: 0.5
+seed: 42
+background_cache_path: ./v1_data/background_cache.npy
